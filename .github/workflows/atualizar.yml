@@ -1,0 +1,59 @@
+# Gera a página de notícias e publica no GitHub Pages.
+# Roda a cada 30 minutos (minutos 7 e 37 de cada hora, para fugir do pico das horas cheias),
+# a cada alteração nos arquivos e quando você clica em "Run workflow" na aba Actions.
+name: Atualizar feed
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.publicar.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Gerar página
+        run: |
+          python noticias.py --saida site
+          cp manifest.webmanifest robots.txt icone-180.png icone-192.png icone-512.png site/
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - name: Publicar
+        id: publicar
+        uses: actions/deploy-pages@v5
+
+      # Em repositório público, o GitHub desliga agendamentos após 60 dias sem
+      # alterações no repositório. Reativar a cada execução tenta evitar isso.
+      - name: Manter agendamento ativo
+        if: github.event_name == 'schedule'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/atualizar.yml/enable"
